@@ -42,7 +42,7 @@ html,body{height:100%;background:#0d0d0d;color:#f0ede8;font-family:'Barlow',sans
 /* ── NAV ── */
 .nav{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .nav::-webkit-scrollbar{display:none}
-.tab{flex-shrink:0;padding:10px 7px;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;color:var(--text3);font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:color .15s}
+.tab{flex-shrink:0;padding:10px 8px;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;color:var(--text3);font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:color .15s}
 .tab.on{color:var(--orange);border-bottom-color:var(--orange)}
 
 /* ── SCREENS ── */
@@ -172,6 +172,12 @@ html,body{height:100%;background:#0d0d0d;color:#f0ede8;font-family:'Barlow',sans
 .iconbtn{background:none;border:none;color:var(--text3);cursor:pointer;padding:3px 4px;font-size:16px;line-height:1}
 .iconbtn:active{color:var(--orange)}
 .hcard-editing{display:flex;flex-direction:column;gap:10px}
+
+/* ── ASSIST (editable name + delete exercise) ── */
+.assist-name-wrap{flex:1;min-width:120px}
+.assist-name-input{background:transparent;border:none;border-bottom:1px dashed transparent;color:var(--text2);font-family:'Barlow',sans-serif;font-size:14px;padding:2px 0;width:100%;-webkit-appearance:none}
+.assist-name-input:focus{outline:none;border-bottom-color:var(--orange);color:var(--text)}
+.setbtn-danger{color:var(--otext);border-color:var(--oborder)}
 </style>
 </head>
 <body>
@@ -431,6 +437,12 @@ const DAYS = [
    assistDef:['3 × 10','5 × 20','3 × 10','3 × 15']}
 ];
 
+let assistPlan = JSON.parse(localStorage.getItem('forge531_assistplan') || 'null');
+if(!assistPlan){
+  assistPlan = DAYS.map(d => d.assist.map((name,i)=>({name, def:d.assistDef[i]})));
+}
+function saveAssistPlan(){ localStorage.setItem('forge531_assistplan', JSON.stringify(assistPlan)); }
+
 const COMMANDMENTS = [
   {n:'Rule I', t:'I will strength train 2–4 days/week.'},
   {n:'Rule II', t:'I will commit myself to increasing my strength in the basic lifts (squat, press, bench press, deadlift and power clean) as I believe that these lifts have a great carryover to all areas.'},
@@ -513,7 +525,10 @@ function renderDay(){
 
   // Assistance work — editable set-by-set breakdown, same idea as the main lift table
   initAssistLog(activeDay);
-  const assistRows = day.assist.map((a,i)=>renderAssistExercise(activeDay,i)).join('');
+  const assistExercises = assistPlan[activeDay];
+  const assistRows = assistExercises.length
+    ? assistExercises.map((ex,i)=>renderAssistExercise(activeDay,i)).join('')
+    : '<div class="empty" style="padding:20px 0">No assistance exercises for this day.<br>Add one below.</div>';
 
   const banner = isDeload
     ? `<div class="banner muted">Deload week — sub-maximal effort only. Focus on form and recovery.</div>`
@@ -533,6 +548,7 @@ function renderDay(){
       <div class="assist-sect">
         <div class="assist-title">Assistance Work — log each set</div>
         ${assistRows}
+        <button type="button" class="btn-outline" style="margin-top:10px" onclick="addAssistExercise(${activeDay})">+ Add Assistance Exercise</button>
       </div>
       <div class="igrp">
         <label>Session Notes</label>
@@ -556,15 +572,14 @@ function parseAssistDef(def){
 
 function initAssistLog(dayIdx){
   if(assistLog[dayIdx]) return;
-  const day = DAYS[dayIdx];
-  assistLog[dayIdx] = day.assist.map((a,i)=>{
-    const parsed = parseAssistDef(day.assistDef[i]);
+  assistLog[dayIdx] = assistPlan[dayIdx].map(ex=>{
+    const parsed = parseAssistDef(ex.def);
     return Array.from({length:parsed.sets},()=>({reps:parsed.repsHint,wt:''}));
   });
 }
 
 function renderAssistExercise(dayIdx,exIdx){
-  const day = DAYS[dayIdx];
+  const ex = assistPlan[dayIdx][exIdx];
   const rows = assistLog[dayIdx][exIdx];
   const rowsHtml = rows.map((r,si)=>`
     <tr>
@@ -575,10 +590,14 @@ function renderAssistExercise(dayIdx,exIdx){
   return `
     <div class="assist-ex" id="assist-ex-${exIdx}">
       <div class="assist-ex-head">
-        <div class="assist-name">${day.assist[exIdx]}<div class="assist-def">${day.assistDef[exIdx]}</div></div>
+        <div class="assist-name-wrap">
+          <input type="text" class="assist-name-input" value="${escHtml(ex.name)}" oninput="renameAssistExercise(${dayIdx},${exIdx},this.value)">
+          <div class="assist-def">${escHtml(ex.def)}</div>
+        </div>
         <div class="assist-setbtns">
           <button type="button" class="setbtn" onclick="removeAssistSet(${dayIdx},${exIdx})">−</button>
           <button type="button" class="setbtn" onclick="addAssistSet(${dayIdx},${exIdx})">+</button>
+          <button type="button" class="setbtn setbtn-danger" onclick="removeAssistExercise(${dayIdx},${exIdx})" title="Remove this exercise">✕</button>
         </div>
       </div>
       <table class="sets-table assist-sets-table">
@@ -600,6 +619,28 @@ function removeAssistSet(dayIdx,exIdx){
   assistLog[dayIdx][exIdx].pop();
   document.getElementById(`assist-ex-${exIdx}`).outerHTML = renderAssistExercise(dayIdx,exIdx);
 }
+function renameAssistExercise(dayIdx,exIdx,val){
+  assistPlan[dayIdx][exIdx].name = val;
+  saveAssistPlan();
+}
+function addAssistExercise(dayIdx){
+  const def = '3 × 10';
+  assistPlan[dayIdx].push({name:'New Exercise', def});
+  saveAssistPlan();
+  if(assistLog[dayIdx]){
+    const parsed = parseAssistDef(def);
+    assistLog[dayIdx].push(Array.from({length:parsed.sets},()=>({reps:parsed.repsHint,wt:''})));
+  }
+  renderDay();
+}
+function removeAssistExercise(dayIdx,exIdx){
+  const nm = assistPlan[dayIdx][exIdx].name || 'this exercise';
+  if(!confirm(`Remove ${nm} from this day?`)) return;
+  assistPlan[dayIdx].splice(exIdx,1);
+  saveAssistPlan();
+  if(assistLog[dayIdx]) assistLog[dayIdx].splice(exIdx,1);
+  renderDay();
+}
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function logFromWorkout(){
@@ -617,10 +658,10 @@ function logFromWorkout(){
 
   // Pull assist set-by-set notes
   let assistNote = '';
-  day.assist.forEach((a,i)=>{
+  (assistPlan[activeDay]||[]).forEach((ex,i)=>{
     const rows = (assistLog[activeDay] && assistLog[activeDay][i]) || [];
     const setsStr = rows.map((r,si)=> (r.reps||r.wt) ? `Set ${si+1}: ${r.reps||'-'}${r.wt?' @ '+r.wt+'lbs':''}` : null).filter(Boolean).join(', ');
-    if(setsStr) assistNote += `${a} — ${setsStr}\n`;
+    if(setsStr) assistNote += `${ex.name} — ${setsStr}\n`;
   });
 
   const sessionNote = (workoutNotes[activeDay]||'').trim();
